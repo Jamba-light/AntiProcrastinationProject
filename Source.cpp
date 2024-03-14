@@ -9,11 +9,12 @@
 using namespace std;
 
 const char* hostFilePath = "C:\\Windows\\System32\\drivers\\etc\\hosts";
+const char* backupFilePath = "C:\\Windows\\System32\\drivers\\etc\\hosts.backup";
 
 void blockDomains(const vector<string>& domains);
 void unblockDomains();
 bool isBlockedTime();
-void waitUntilNextHour();
+void waitUntilNextBlockTime();
 
 int main() {
     vector<string> domains = { "127.0.0.1 www.twitch.tv",
@@ -21,14 +22,19 @@ int main() {
                                "127.0.0.1 www.twitter.com",
                                "127.0.0.1 www.espn.com" };
 
+    // Make a backup of the hosts file
+    ifstream src(hostFilePath, ios::binary);
+    ofstream dest(backupFilePath, ios::binary);
+    dest << src.rdbuf();
+
     while (true) {
         if (isBlockedTime()) {
             blockDomains(domains);
         }
         else {
             unblockDomains();
+            waitUntilNextBlockTime();
         }
-        waitUntilNextHour(); // Wait until next hour to check again
     }
 
     return 0;
@@ -47,31 +53,22 @@ void blockDomains(const vector<string>& domains) {
 }
 
 void unblockDomains() {
-    //Delete the appended websites (4 lines)
-    fstream file(hostFilePath, ios::app);
-    int linecount = 0;
-    string line;
-
-    while (getline(file, line)) {
-        linecount++;
-        if (linecount >= 24) {
-            file << line << "\n";
-        }
-    }
-    file.close();
+    ifstream backup(backupFilePath);
+    ofstream file(hostFilePath);
+    file << backup.rdbuf();
 }
 
 bool isBlockedTime() {
-    time_t now = time(nullptr);
-    struct tm* localTime = localtime(&now);
-    int hour = localTime->tm_hour;
-    return (hour >= 19); // Block sites after 7 PM (19:00)
+    time_t now;
+    struct tm localTime;
+    localtime_s(&localTime, &now);
+    int hour = localTime.tm_hour;
+    return (hour >= 23); // Block sites after 7 PM (19:00)
 }
 
-void waitUntilNextHour() {
-    // Sleep until the next hour
+void waitUntilNextBlockTime() {
     auto now = chrono::system_clock::now();
-    auto nextHour = now + chrono::hours(1) - chrono::minutes(chrono::system_clock::now().tm_min);
-    this_thread::sleep_until(nextHour);
+    auto blockTime = chrono::system_clock::from_time_t(time(nullptr));
+    blockTime += chrono::hours(24 - chrono::system_clock::from_time_t(time(nullptr)).time_since_epoch().count() % 24 + 7);
+    this_thread::sleep_until(blockTime);
 }
-
